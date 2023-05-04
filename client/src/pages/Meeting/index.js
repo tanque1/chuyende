@@ -57,7 +57,7 @@ const AppProcess = (() => {
         audio.enabled = true;
         document.getElementById(
           "miceMuteUnmute"
-        ).innerHTML = `<span className="material-icons">mic</span>`;
+        ).innerHTML = `<span class="material-icons">mic</span>`;
 
         updateMediaSenders(audio, rtpAudSenders);
       } else {
@@ -65,7 +65,7 @@ const AppProcess = (() => {
 
         document.getElementById(
           "miceMuteUnmute"
-        ).innerHTML = `<span className="material-icons">mic_off</span>`;
+        ).innerHTML = `<span class="material-icons">mic_off</span>`;
 
         removeMediaSenders(rtpAudSenders);
         isAudioMute = !isAudioMute;
@@ -90,6 +90,21 @@ const AppProcess = (() => {
       }
     });
   };
+
+  async function loadAudio() {
+    try {
+      let astream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: true,
+      });
+
+      audio = astream.getAudioTracks()[0];
+      audio.enabled = false;
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
   function connectionStatus(connection) {
     if (
       connection &&
@@ -105,16 +120,47 @@ const AppProcess = (() => {
   async function updateMediaSenders(track, rtpSenders) {
     for (var conID in peers_connection_ids) {
       if (connectionStatus(peers_connection[conID])) {
-        if(rtpSenders[conID] && rtpSenders[conID].track){
+        if (rtpSenders[conID] && rtpSenders[conID].track) {
           rtpSenders[conID].replaceTrack(track);
-        }else {
-          rtpSenders[conID] = peers_connection[conID].addTrack(track)
+        } else {
+          rtpSenders[conID] = peers_connection[conID].addTrack(track);
         }
       }
     }
   }
 
+  function removeMediaSenders(rtpSenders) {
+    for (let conId in peers_connection_ids) {
+      if (rtpSenders[conId] && connectionStatus(peers_connection[conId])) {
+        peers_connection[conId].removeTrack(rtpSenders[conId]);
+        rtpSenders[conId] = null;
+      }
+    }
+  }
+
+  function removeVideoStream(rtpVidSenders) {
+    if (videoCamTrack) {
+      videoCamTrack.stop();
+      videoCamTrack = null;
+      local_div.srcObject = null;
+      removeMediaSenders(rtpVidSenders);
+    }
+  }
+
   async function videoProcess(newVideoState) {
+    if (newVideoState === videoStates.None) {
+      document.getElementById("videoCamOff").innerHTML = `
+      <span class="material-icons">videocam_off</span>`;
+      videoSt = newVideoState;
+
+      removeVideoStream(rtpVidSenders);
+      return;
+    }
+
+    if (newVideoState === videoStates.Camera) {
+      document.getElementById("videoCamOff").innerHTML = `
+      <span class="material-icons">videocam</span>`;
+    }
     try {
       let vstream = null;
       if (newVideoState === videoStates.Camera) {
@@ -220,12 +266,12 @@ const AppProcess = (() => {
     };
     peers_connection_ids[connId] = connId;
     peers_connection[connId] = connection;
-    return connection;
     if (videoSt === videoStates.Camera || videoSt === videoStates.ScreenShare) {
       if (videoCamTrack) {
         updateMediaSenders(videoCamTrack, rtpVidSenders);
       }
     }
+    return connection;
   };
 
   const SDPProcess = async (message, from_connid) => {
@@ -375,7 +421,6 @@ export default function Meeting() {
                     id={"a_" + u.connId}
                     autoPlay
                     controls
-                    muted
                     className="hidden"
                   ></audio>
                 </div>
