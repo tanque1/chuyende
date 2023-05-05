@@ -1,12 +1,12 @@
 import react from "@vitejs/plugin-react";
 import fs from "fs/promises";
 import { defineConfig } from "vite";
-
+import basicSsl from "@vitejs/plugin-basic-ssl"
 // https://vitejs.dev/config/
 export default defineConfig({
   esbuild: {
     loader: "jsx",
-    include: /src\/.*\.jsx?$/,
+    include: /src\/.*\.js?$/,
     exclude: [],
   },
   optimizeDeps: {
@@ -24,7 +24,7 @@ export default defineConfig({
       ],
     },
   },
-  plugins: [react()],
+  plugins: [react(),basicSsl()],
   server: {
     watch: {
       usePolling: true,

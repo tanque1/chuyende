@@ -74,6 +74,8 @@
 }
 
 video {
-  border:  1 solid gray;
-  width: 300px;
+  border:  1px solid gray;
+  width: 500px;
+  height: 100%;
 }
+
