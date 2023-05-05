@@ -220,12 +220,12 @@ const AppProcess = (() => {
     };
     peers_connection_ids[connId] = connId;
     peers_connection[connId] = connection;
-    return connection;
     if (videoSt === videoStates.Camera || videoSt === videoStates.ScreenShare) {
       if (videoCamTrack) {
         updateMediaSenders(videoCamTrack, rtpVidSenders);
       }
     }
+    return connection;
   };
 
   const SDPProcess = async (message, from_connid) => {
