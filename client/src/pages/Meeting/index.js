@@ -36,7 +36,6 @@ const AppProcess = (() => {
   let rtpVidSenders = [];
 
   const _init = async (SDP_func, my_connid) => {
-    console.log(my_connid);
     my_connection_id = my_connid;
     serverProcess = SDP_func;
     eventProcess();
@@ -151,6 +150,13 @@ const AppProcess = (() => {
     if (newVideoState === videoStates.None) {
       document.getElementById("videoCamOff").innerHTML = `
       <span class="material-icons">videocam_off</span>`;
+
+      document.getElementById("btnScreenShare").innerHTML = `
+      <span class="material-icons">present_to_all</span>
+            <div>Hiện tại</div>
+      
+      `;
+
       videoSt = newVideoState;
 
       removeVideoStream(rtpVidSenders);
@@ -179,6 +185,13 @@ const AppProcess = (() => {
           },
           audio: false,
         });
+        vstream.oninactive = (e) => {
+          remote_vid_stream(rtpVidSenders);
+          document.getElementById("btnScreenShare").innerHTML = `
+          <span class="material-icons">present_to_all</span>
+        <div >Chia sẽ</div>
+          `;
+        };
       }
 
       if (vstream && vstream.getVideoTracks().length > 0) {
@@ -193,6 +206,23 @@ const AppProcess = (() => {
       return;
     }
     videoSt = newVideoState;
+
+    if (newVideoState === videoStates.Camera) {
+      document.getElementById("videoCamOff").innerHTML = `
+        <span class"material-icons">videocam</span>`;
+
+      document.getElementById("btnScreenShare").innerHTML = `
+        <span class="material-icons">present_to_all</span>
+      <div >Chia sẽ</div>
+        `;
+    } else if (newVideoState === videoStates.ScreenShare) {
+      document.getElementById("videoCamOff").innerHTML = `
+      <span class"material-icons">videocam_off</span>`;
+
+      document.getElementById("btnScreenShare").innerHTML = `
+      <span class="material-icons text-green-500">present_to_all</span>
+      <div class="text-green-500">Dừng chia sẽ</div>`;
+    }
   }
 
   const iceConfiguration = {
@@ -304,6 +334,29 @@ const AppProcess = (() => {
     }
   };
 
+  const closeConnection = async (connId) => {
+    peers_connection_ids[connId] = null;
+    if (peers_connection[connId]) {
+      peers_connection[connId].close();
+      peers_connection[connId] = null;
+    }
+    if (remote_aud_stream[connId]) {
+      remote_aud_stream[connId].getTracks().forEach((t) => {
+        if (t.stop) t.stop();
+      });
+      remote_aud_stream[connId] = null;
+    }
+
+    if (remote_vid_stream[connId]) {
+      remote_vid_stream[connId].getTracks().forEach((t) => {
+        if (t.stop) t.stop();
+      });
+      remote_vid_stream[connId] = null;
+    }
+  };
+
+
+
   return {
     setNewConnection: async (connId) => {
       await setConnection(connId);
@@ -313,6 +366,9 @@ const AppProcess = (() => {
     },
     processClientFunc: async (data, from_connid) => {
       await SDPProcess(data, from_connid);
+    },
+    closeConnectionCall: async (connId) => {
+      await closeConnection(connId);
     },
   };
 })();
@@ -345,7 +401,7 @@ export default function Meeting() {
           to_connid: to_connid,
         });
     };
-    if (socket?.connected === true) {
+    if (socket) {
       AppProcess.init(SPD_func, socket.id);
       socket.on("connect", () => {
         console.log("socket connected to client side");
@@ -366,6 +422,7 @@ export default function Meeting() {
   useEffect(() => {
     socket &&
       socket.on("informOtherAboutMe", async (data) => {
+        console.log("userJoin", data);
         setUser((pre) => [data, ...pre]);
         AppProcess.setNewConnection(data.connId);
       });
@@ -394,6 +451,15 @@ export default function Meeting() {
         await AppProcess.processClientFunc(data.message, data.from_connid);
       });
   }, [socket]);
+
+  useEffect(() => {
+    socket &&
+      socket.on("inFormAboutDisconnectedUser", (data) => {
+        setUser((pre) => pre.filter((p) => p.connId !== data.connId));
+        AppProcess.closeConnectionCall(data.connId);
+      });
+  }, [socket]);
+
   return (
     <main className=" flex flex-col  home-wrap">
       <div className="g-top text-gray-100">
@@ -402,7 +468,7 @@ export default function Meeting() {
             id="me"
             className=" border bg-black w-1/2 flex flex-col justify-center userbox"
           >
-            <h2 className="text-center text-base">{userName}</h2>
+            <h2 className="text-center text-base">{userName}(Me)</h2>
             <div className="border mx-auto">
               <video autoPlay muted id="localVideoPlayer"></video>
             </div>
@@ -449,10 +515,7 @@ export default function Meeting() {
       </div>
       <div className="g-bottom  px-5 transition bg-gray-100 m-0 flex justify-between items-center">
         <div className="bottom-left flex ">
-          <div
-            id="btnScreenShare"
-            className=" text-center cursor-pointer hover:opacity-80 meeting-details-button flex items-center"
-          >
+          <div className=" text-center cursor-pointer hover:opacity-80 meeting-details-button flex items-center">
             <p>Chi tiết cuộc họp</p>
             <SlArrowDown size={12} />
           </div>
@@ -475,8 +538,11 @@ export default function Meeting() {
           </div>
         </div>
         <div className="bottom-0 right-0 flex justify-center items-center mr-3 ">
-          <div className="present-now-wrap flex justify-center flex-col items-center mr-5 cursor-pointer hover:opacity-80">
-            <MdPresentToAll size={24} />
+          <div
+            id="btnScreenShare"
+            className="present-now-wrap flex justify-center flex-col items-center mr-5 cursor-pointer hover:opacity-80"
+          >
+            <span className="material-icons">present_to_all</span>
             <div>Hiện tại</div>
           </div>
           <div className="option-wrap cursor-pointer hover:opacity-80 flex items-center h-[10vh] relative ">
