@@ -3,7 +3,7 @@ const path = require("path");
 const app = express();
 const cors = require("cors");
 
-whiteList = ["https://localhost:3000", "http://localhost:3000","http://192.168.122.215:3000","https://192.168.122.215:3000"];
+whiteList = ["https://localhost:3000", "http://localhost:3000","https://192.168.1.13:3000","https://27.75.17.119:3000"];
 const corsOptions = {
   credentials: true,
   methods: ["POST", "GET", "PUT", "DELETE"],
@@ -19,6 +19,11 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+
+app.use("/",(req,res) => {
+  return res.json({"message":"Test"})
+})
 
 const http = require("http").createServer(app);
 
@@ -76,9 +81,27 @@ io.on("connection", (socket) => {
     }
   })
 
+  socket.on("sendMessage", (msg) => {
+    const mUser = userConnections.find(p => p.connectionId === socket.id)
+    if(mUser){
+      const meetingId = mUser.meetingId
+      const from = mUser.userId;
+      const list = userConnections.filter(p => p.meetingId === meetingId);
+      console.log(list);
+      list.forEach((v) => {
+        console.log(msg);
+        socket.to(v.connectionId).emit("showChatMessage",{
+          id: socket.id,
+          message: msg,
+          from
+        });
+      })
+
+    }
+  })
 
 });
 
-http.listen(5000, () => {
+http.listen(5000 ,() => {
   console.log("Server is running on port", 5000);
 });

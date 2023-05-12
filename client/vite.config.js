@@ -29,8 +29,14 @@ export default defineConfig({
     watch: {
       usePolling: true,
     },
+    https: true, 
     host: true,
-    strictPort: true,
     port: 3000,
+    secure: false,
+    strictPort: true,
+    hmr: {
+      port: 3000,
+      host: "27.75.17.119",
+    }, 
   },
 });
