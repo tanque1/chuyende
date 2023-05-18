@@ -2,19 +2,34 @@ import { useRef } from "react";
 import { HiOutlineVideoCamera } from "react-icons/hi";
 import { BsKeyboard } from "react-icons/bs";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
+import { useSelector } from "react-redux";
+import { BASE_URI } from "../../../utils/constant";
+import { toast } from "react-toastify";
 export default function Main() {
   const ref = useRef();
   const navigate = useNavigate();
+  const { socket } = useSelector((state) => state.connection);
+  const { info } = useSelector((state) => state.user);
   const handleJoinMeet = () => {
     navigate(`/meetingID/${ref.current.value}`);
   };
 
-  const handleNewMeeting = () =>{
-    const meetingID = Math.floor(Math.random() * 100000000)
-    
-    navigate(`/meetingID/${meetingID}`);
-
-  }
+  const handleNewMeeting = async () => {
+    try {
+      const meetingID = Math.floor(Math.random() * 100000);
+      if (info) {
+        const res = await axios.post(BASE_URI + "create-meeting", {
+          owner: info.sub,
+          meetId: meetingID,
+          sub: info.sub
+        });
+        navigate(`/meetingID/${meetingID}`,{ state: { owner: true } });
+      } else {
+        toast.error("Vui lòng đăng nhập");
+      }
+    } catch (error) {}
+  };
 
   return (
     <div className="container mx-auto flex p-10">
@@ -29,7 +44,7 @@ export default function Main() {
         <ul className="flex w-full items-center space-x-2">
           <li>
             <button
-            onClick={handleNewMeeting}
+              onClick={handleNewMeeting}
               type="button"
               className="space-x-2 text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded text-sm px-5 py-2.5 text-center inline-flex items-center mr-2 "
             >
