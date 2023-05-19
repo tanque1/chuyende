@@ -9,8 +9,8 @@ let listMeetings = [];
 whiteList = [
   "https://localhost:3000",
   "http://localhost:3000",
-  "https://192.168.1.13:3000",
-  "https://27.75.17.119:3000",
+  "https://192.168.1.24:3000",
+  "https://116.109.252.13:3000",
 ];
 const corsOptions = {
   credentials: true,
@@ -42,7 +42,7 @@ app.use("/create-meeting", (req, res) => {
   if (!meetId || !owner || !sub) return res.json({ status: false });
   listMeetings.push({
     meetId: meetId,
-    owner: owner,
+    owner: [owner],
     users: [
       {
         sub: sub,
@@ -58,7 +58,7 @@ app.use("/create-meeting", (req, res) => {
 
 app.post("/get-info-meeting", (req, res) => {
   const { meetId, sub } = req.body;
-  console.log(meetId);
+
   const checkMeeting = listMeetings.find((l) => l.meetId === +meetId);
   console.log(checkMeeting);
   if (!checkMeeting) {
@@ -71,7 +71,7 @@ app.post("/get-info-meeting", (req, res) => {
   return res.json({
     user: userInMeet,
     status: true,
-    owner: checkMeeting.owner,
+    owner: checkMeeting.owner?.includes(sub),
   });
 });
 
@@ -230,6 +230,113 @@ io.on("connection", (socket) => {
       socket.to(v.connectionId).emit("informUserShareFilePermissions", data)
     );
   });
+
+  socket.on("userPermissionToEnterMeeting", (data) => {
+    const admin = userConnections.filter(
+      (p) => data.meetingId === p.meetingId && p.owner === true
+    );
+    admin.forEach((u) =>
+      socket
+        .to(u.connectionId)
+        .emit("informUserRequestJoinMeeting", { ...data, connId: socket.id })
+    );
+  });
+
+  socket.on("acceptUserJoinMeeting", (data) => {
+    listMeetings = listMeetings.map((l) => {
+      if (+l.meetId === +data.meetingId) {
+        return {
+          ...l,
+          users: [
+            ...l.users,
+            {
+              sub: data.sub,
+              audio: true,
+              video: true,
+              shareFile: true,
+              chat: true,
+            },
+          ],
+        };
+      } else {
+        return l;
+      }
+    });
+    socket.to(data.connId).emit("responseRequestJoinMeeting", data);
+  });
+
+  socket.on("changeUserPerToAdmin", (data) => {
+    listMeetings = listMeetings.map((l) => {
+      if (+l.meetId === +data.meetingId) {
+        return {
+          ...l,
+          owner: [...l.owner, data.sub],
+          users: l.users.map((u) => {
+            if (u.sub === data.sub) {
+              return {
+                ...u,
+                audio: true,
+                video: true,
+                shareFile: true,
+                chat: true,
+              };
+            }
+            return u;
+          }),
+        };
+      }
+      return l;
+    });
+     userConnections = userConnections.map((user) => {
+      if( +data.meetingId === +user.meetingId){
+        return {
+          ...user,
+          audio: true,
+          video: true,
+          shareFile: true,
+          chat: true,
+          owner: true
+        }
+      }else {
+        return user;
+      }
+     })
+    const otherUser = userConnections.filter(
+      (u) => +u.meetingId === +data.meetingId
+    );
+    otherUser.forEach(o =>{
+      socket.to(o.connectionId).emit("informUpdatePermissionsUser",data)
+    })
+  });
+
+  socket.on("addRoom",(data) =>{
+    console.log(data);
+    listMeetings.push({
+      meetId: data.meetId,
+      owner: [data.owner],
+      users: [
+        {
+          sub: data.owner,
+          audio: true,
+          video: true,
+          shareFile: true,
+          chat: true,
+        },
+        ...data.users?.map(u => {
+          return {
+            sub: u.sub,
+            audio: true,
+            video: true,
+            shareFile: true,
+            chat: true,
+          }
+        })
+      ],
+    });
+    data.users?.forEach(u =>{
+      socket.to(u.connId).emit("informUsersAddedToTheRoom",data.meetId)
+    })
+  })
 
   socket.on("disconnect", () => {
     const disUser = userConnections.find((p) => p.connectionId === socket.id);

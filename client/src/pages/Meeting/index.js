@@ -5,9 +5,13 @@ import { IoIosCall } from "react-icons/io";
 import { MdMessage } from "react-icons/md";
 import { SlArrowDown } from "react-icons/sl";
 import { useSelector } from "react-redux";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import axios from "axios";
-import { BASE_URI } from "../../utils/constant";
+import { BASE_URI, BASE_URI_CLIENT } from "../../utils/constant";
+import ModalConfirm from "../../components/ModalConfirm";
+import UserMenu from "../../components/UserMenu";
+import { RiVideoAddFill } from "react-icons/ri";
+import ModalAddRoom from "../../components/ModalAddRoom";
 const AppProcess = (() => {
   let serverProcess;
   let peers_connection_ids = [];
@@ -285,8 +289,8 @@ const AppProcess = (() => {
         serverProcess(JSON.stringify({ icecandidate: e.candidate }), connId);
       }
     };
-
     connection.ontrack = (e) => {
+      console.log(e);
       if (!remote_vid_stream[connId]) {
         remote_vid_stream[connId] = new MediaStream();
       }
@@ -330,7 +334,6 @@ const AppProcess = (() => {
 
   const SDPProcess = async (message, from_connid) => {
     message = JSON.parse(message);
-
     for (const s of peers_connection[from_connid].getSenders()) {
       if (s.track == null) {
         const remoteVideoPlayer = document.getElementById("v_" + from_connid);
@@ -421,9 +424,10 @@ export default function Meeting() {
   const [isShowDialog, setIsShowDialog] = useState(false);
   const [listShareFile, setListShareFile] = useState([]);
   const [isShowShareForm, setIsShowShareForm] = useState(false);
-  const [isDropDown, setIsDropDown] = useState(false);
-  const { state = {} } = useLocation();
-  const [loading,setLoading] = useState(false);
+  const [userJoinMeet, setUserJoinMeet] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isShowModalAddRoom, setIsShowModalAddRoom] = useState(false);
+  const [listRoom, setListRoom] = useState([]);
   const { info } = useSelector((state) => state.user);
   const navigate = useNavigate();
 
@@ -438,7 +442,7 @@ export default function Meeting() {
     const data = {
       time: lTime,
       message: inputRef.current.value,
-      from: "Bạn",
+      from: "Tôi",
     };
     setMessages((pre) => [{ ...data, time: lTime }, ...pre]);
 
@@ -449,6 +453,15 @@ export default function Meeting() {
   const handleShowDetailsParticipant = () => {
     setIsShowDetail(true);
     setIsShowChat(true);
+  };
+
+  const handleCloseModalConfirm = () => {
+    setUserJoinMeet(false);
+  };
+
+  const handleAcceptModalConfirm = () => {
+    socket && socket.emit("acceptUserJoinMeeting", userJoinMeet);
+    setUserJoinMeet(false);
   };
 
   const handleCopyClipBoard = () => {
@@ -496,7 +509,7 @@ export default function Meeting() {
         return [
           ...pre,
           {
-            userName: "Bạn",
+            userName: "Tôi",
             fileName: attachFileName,
             filePath: attachPath,
           },
@@ -554,6 +567,7 @@ export default function Meeting() {
       });
     });
   };
+
   const handleChangeUserChatPer = (connId, meetingId, stateChat) => {
     socket &&
       socket.emit("changeUserChatPermissions", {
@@ -574,6 +588,7 @@ export default function Meeting() {
       });
     });
   };
+
   const handleChangeUserShareFilePer = (connId, meetingId, stateShareFile) => {
     socket &&
       socket.emit("changeUserShareFilePermissions", {
@@ -595,37 +610,88 @@ export default function Meeting() {
     });
   };
 
-  useEffect(() => {
-    const getUser = async(info) => {
-      const res = await axios.post(BASE_URI +  "get-info-meeting",{
-        sub: info.sub,
-        meetId: id
-      })
-      if(res.status === 1) {
-        setLoading(true);
-    socket && socket.emit("userPermissionToEnterRoom",{
-          meetId:id,
-          sub: info.sub,
-          connId: socket?.id
-        })
-      }
-      console.log(res);
-    }
-    if (info || !currentUser) {
-      getUser(info)
-      setCurrentUser({
-        name: info.name,
-        sub: info.sub,
-        audio: true,
-        video: true,
-        chat: true,
-        shareFile: true,
-        owner: state?.owner || false,
+  const handleChangeUserPerToAdmin = (connId, meetingId, sub) => {
+    setUsers((pre) => {
+      return pre.map((u) => {
+        if (u.connId === connId) {
+          return {
+            ...u,
+            owner: true,
+          };
+        } else {
+          return u;
+        }
       });
-    } else {
-      navigate("/", { replace: true });
+    });
+    socket &&
+      socket.emit("changeUserPerToAdmin", {
+        connId,
+        meetingId,
+        sub,
+      });
+  };
+
+  const handleAddRoom = (list) => {
+    const meetingID = Math.floor(Math.random() * 100000);
+    
+    socket &&
+      socket.emit("addRoom", {
+        owner: currentUser.sub,
+        users: list,
+        meetId: meetingID,
+      });
+      setListRoom(pre => [meetingID,...pre])
+  };
+
+  useEffect(() => {
+    const getUser = async (info) => {
+      const res = await axios.post(BASE_URI + "get-info-meeting", {
+        sub: info.sub,
+        meetId: id,
+      });
+      if (res.data.status === 0) {
+        return navigate("/", { replace: true });
+      }
+      if (res.data.status === 1) {
+        setLoading(true);
+        socket &&
+          socket.emit("userPermissionToEnterMeeting", {
+            meetingId: id,
+            sub: info.sub,
+            name: info.name,
+            connId: socket?.id,
+          });
+
+        socket &&
+          socket.on("responseRequestJoinMeeting", () => {
+            setLoading(false);
+            getUser(info);
+            return;
+          });
+      }
+      if (res.data?.user) {
+        socket &&
+          socket.emit("userConnect", {
+            ...res.data.user,
+            name: info.name,
+            meetingId: id,
+            owner: res.data.owner,
+          });
+        setCurrentUser({
+          ...res.data.user,
+          name: info.name,
+          owner: res.data.owner,
+        });
+      }
+    };
+
+    if (!currentUser && socket) {
+      getUser(info);
     }
-  }, [info]);
+    // else {
+    //   navigate("/", { replace: true });
+    // }
+  }, [info, socket]);
 
   useEffect(() => {
     const SPD_func = (data, to_connid) => {
@@ -635,7 +701,7 @@ export default function Meeting() {
           to_connid: to_connid,
         });
     };
-    if (socket && !firstLoad) {
+    if (socket && !firstLoad && currentUser) {
       setFirstLoad(true);
       AppProcess.init(SPD_func, socket.id);
       socket.on("connect", () => {
@@ -644,54 +710,53 @@ export default function Meeting() {
     }
   });
 
-  useEffect(() => {
-    if (currentUser && id) {
-      socket &&
-        socket.emit("userConnect", {
-          ...currentUser,
-          name: currentUser.name,
-          meetingId: id,
-        });
-    }
-  }, [socket, currentUser?.name, id]);
+  // useEffect(() => {
+  //   if (currentUser && id && socket) {
+  //     socket.emit("userConnect", {
+  //       ...currentUser,
+  //       name: currentUser.name,
+  //       meetingId: id,
+  //     });
+  //   }
+  // }, [socket, id, currentUser]);
+
+  // useEffect(() =>{
+  //   socket && socket.on("responseRequestJoinMeeting", () =>{
+  //     setLoading(false);
+  //   })
+  // },[socket])
 
   useEffect(() => {
-    if(currentUser){
-      socket &&
-        socket.on("informOtherAboutMe", async (data) => {
-          setUsers((pre) => [data, ...pre]);
-          AppProcess.setNewConnection(data.connId);
-        });
-    }
+    socket &&
+      socket.on("informOtherAboutMe", async (data) => {
+        setUsers((pre) => [data, ...pre]);
+        AppProcess.setNewConnection(data.connId);
+      });
   }, [socket]);
 
   useEffect(() => {
-    if(currentUser){
-      socket &&
-        socket.on("informMeAboutOtherUser", async (otherUser = []) => {
-          if (otherUser.length) {
-            setUsers(() =>
-              otherUser.map((o) => {
-                AppProcess.setNewConnection(o.connectionId);
-                return {
-                  ...o,
-                  otherUserId: o.userId,
-                  connId: o.connectionId,
-                };
-              })
-            );
-          }
-        });
-    }
+    socket &&
+      socket.on("informMeAboutOtherUser", async (otherUser = []) => {
+        if (otherUser.length) {
+          setUsers(() =>
+            otherUser.map((o) => {
+              AppProcess.setNewConnection(o.connectionId);
+              return {
+                ...o,
+                otherUserId: o.userId,
+                connId: o.connectionId,
+              };
+            })
+          );
+        }
+      });
   }, [socket]);
 
   useEffect(() => {
-    if(currentUser) {
-      socket &&
-        socket.on("SDPProcess", async (data) => {
-          await AppProcess.processClientFunc(data.message, data.from_connid);
-        });
-    }
+    socket &&
+      socket.on("SDPProcess", async (data) => {
+        await AppProcess.processClientFunc(data.message, data.from_connid);
+      });
   }, [socket]);
 
   useEffect(() => {
@@ -806,6 +871,7 @@ export default function Meeting() {
         }
       });
   }, [socket]);
+
   useEffect(() => {
     socket &&
       socket.on("informUserShareFilePermissions", (data) => {
@@ -832,121 +898,205 @@ export default function Meeting() {
         }
       });
   }, [socket]);
+
+  useEffect(() => {
+    if (socket) {
+      socket.on("informUserRequestJoinMeeting", (data) => {
+        setUserJoinMeet(data);
+      });
+    }
+  }, [socket]);
+
+  useEffect(() => {
+    socket &&
+      socket.on("informUpdatePermissionsUser", (data) => {
+        setCurrentUser((pre) => {
+          if (pre.sub === data.sub) {
+            return {
+              ...pre,
+              audio: true,
+              video: true,
+              chat: true,
+              shareFile: true,
+              owner: true,
+            };
+          }
+          return pre;
+        });
+        setUsers((pre) => {
+          return pre.map((u) => {
+            if (u.sub === data.sub) {
+              return {
+                ...u,
+                audio: true,
+                video: true,
+                chat: true,
+                shareFile: true,
+                owner: true,
+              };
+            }
+            return u;
+          });
+        });
+      });
+  }, [socket]);
+  useEffect(() => {
+    socket &&
+      socket.on("informUsersAddedToTheRoom", (data) => {
+        setListRoom((pre) => [data, ...pre]);
+      });
+  }, [socket]);
   return (
-    <main className=" flex flex-col  home-wrap">
-      <div className="g-top flex  text-gray-100">
-        <div className=" flex-1 top-remote-video-show-wrap overflow-auto  flex flex-wrap ] justify-center">
-          <div
-            id="me"
-            className=" border bg-black w-1/2 flex flex-col justify-center userbox"
-          >
-            <h2 className="text-center text-base">{currentUser?.name}(Me)</h2>
-            <div className="border mx-auto">
-              <video
-                onDoubleClick={(e) => openFullscreen(e)}
-                autoPlay
-                muted
-                id="localVideoPlayer"
-              ></video>
+    <>
+      <ModalAddRoom
+        visible={isShowModalAddRoom}
+        users={users || []}
+        onClose={() => setIsShowModalAddRoom(false)}
+        onSubmit={handleAddRoom}
+      />
+      <ModalConfirm
+        onClick={handleAcceptModalConfirm}
+        onClose={handleCloseModalConfirm}
+        visible={userJoinMeet}
+        data={userJoinMeet}
+      />
+      {loading ? (
+        <div
+          className="fixed top-0 left-0 z-50 w-screen h-screen flex items-center justify-center"
+          style={{ background: "rgba(0, 0, 0, 0.3)" }}
+        >
+          <div className="bg-white border py-2 px-5 rounded-lg flex items-center flex-col">
+            <div className="loader-dots block relative w-20 h-5 mt-2">
+              <div className="absolute top-0 mt-1 w-3 h-3 rounded-full bg-green-500"></div>
+              <div className="absolute top-0 mt-1 w-3 h-3 rounded-full bg-green-500"></div>
+              <div className="absolute top-0 mt-1 w-3 h-3 rounded-full bg-green-500"></div>
+              <div className="absolute top-0 mt-1 w-3 h-3 rounded-full bg-green-500"></div>
             </div>
-          </div>
-          {users.map((u, i) => {
-            return (
-              <div
-                key={i}
-                id="otherTemplate"
-                className=" border bg-black w-1/2 flex justify-center  flex-col userbox"
-              >
-                <h2 className="text-center text-base">{u.otherUserId}</h2>
-                <div className="self-center border mx-auto">
-                  <video
-                    onDoubleClick={(e) => openFullscreen(e)}
-                    id={"v_" + u.connId}
-                    autoPlay
-                    muted
-                    src=""
-                  ></video>
-                  <audio
-                    id={"a_" + u.connId}
-                    autoPlay
-                    controls
-                    className="hidden"
-                  ></audio>
-                </div>
-              </div>
-            );
-          })}
-          <div>
-            {/* <div className="bg-black call-wrap  ">
-              <div id="divUsers" className="flex flex-wrap video-wrap"></div>
-            </div> */}
+            <div className="text-gray-500 text-xs font-medium mt-2 text-center">
+              Đã gửi yêu cầu vào phòng vui lòng đợi...
+            </div>
           </div>
         </div>
-
-        {isShowDetail && (
-          <div className="g-right-detail-wrap  z-50 bg-white text-gray-800 h-screen w-[20rem]  shrink-0">
-            <div className="meeting-heading-wrap flex justify-between items-center px-3 h-[5vh]">
-              <div className="meeting-heading font-bold cursor-pointer">
-                Chi tiết cuộc họp
-              </div>
+      ) : (
+        <main className=" flex flex-col  home-wrap">
+          <div className="g-top flex  text-gray-100">
+            <div className=" flex-1 top-remote-video-show-wrap overflow-auto  flex flex-wrap ] justify-center">
               <div
-                onClick={() => setIsShowDetail(false)}
-                className="meeting-heading-cross display-center cursor-pointer"
+                id="me"
+                className=" border bg-black w-1/2 flex flex-col justify-center userbox"
               >
-                <span className="material-icons">clear</span>
-              </div>
-            </div>
-            <div className="people-chat-wrap flex justify-between items-center text-sm mx-3 px-3 h-[5vh]">
-              <div
-                onClick={() => setIsShowChat(true)}
-                className={`${
-                  isShowChat ? "border-b-2 border-sky-500" : ""
-                } people-heading display-center cursor-pointer transition`}
-              >
-                <div className="people-heading-icon display-center mr-1">
-                  <span className="material-icons">people</span>
+                <h2 className="text-center text-base">
+                  {currentUser?.name}(Tôi)
+                </h2>
+                <div className="border mx-auto">
+                  <video
+                    onDoubleClick={(e) => openFullscreen(e)}
+                    autoPlay
+                    muted
+                    id="localVideoPlayer"
+                  ></video>
                 </div>
-                <div className="people-heading-text display-center">
-                  Participant (
-                  <span className="participant-count">{1 + users.length}</span>
-                </div>
-                )
               </div>
-              <div
-                onClick={() => setIsShowChat(false)}
-                className={`${
-                  !isShowChat ? "border-b-2 border-sky-500" : ""
-                } chat-heading flex justify-around	 items-center cursor-pointer transition`}
-              >
-                <div className="  chat-heading-icon display-center mr-1">
-                  <span className="material-icons">message</span>
-                </div>
-                <div className="heading-text">Chat</div>
-              </div>
-            </div>
-
-            <div className="transition in-call-chat-wrap mx-3 px-3 text-sm h-[80vh] overflow-y-scroll my-3">
-              {isShowChat ? (
-                <div className="in-call-wrap-up ">
-                  <div className="in-call-wrap flex justify-between items-center mb-3">
-                    <div className="participant-img-name-wrap display-center cursor-pointer">
-                      <div className="participant-img">
-                        <img
-                          src="/other.jpg"
-                          alt=""
-                          className="border border-gray-800 h-[40px] w-[40px] rounded-[50%]"
-                        />
-                      </div>
-                      <div className="participant-name ml-2">Bạn</div>
+              {users.map((u, i) => {
+                return (
+                  <div
+                    key={i}
+                    id="otherTemplate"
+                    className=" border bg-black w-1/2 flex justify-center  flex-col userbox"
+                  >
+                    <h2 className="text-center text-base">{u.otherUserId}</h2>
+                    <div className="self-center border mx-auto">
+                      <video
+                        onDoubleClick={(e) => openFullscreen(e)}
+                        id={"v_" + u.connId}
+                        autoPlay
+                        muted
+                        src=""
+                      ></video>
+                      <audio
+                        id={"a_" + u.connId}
+                        autoPlay
+                        controls
+                        className="hidden"
+                      ></audio>
                     </div>
                   </div>
-                  {users.map((u) => {
-                    return (
-                      <div
-                        id={"participant_" + u.connId}
-                        key={u.connId}
-                        className="in-call-wrap flex justify-between items-center mb-3"
-                      >
+                );
+              })}
+              <div>
+                {/* <div className="bg-black call-wrap  ">
+              <div id="divUsers" className="flex flex-wrap video-wrap"></div>
+            </div> */}
+              </div>
+            </div>
+
+            {isShowDetail && (
+              <div className="g-right-detail-wrap  z-50 bg-white text-gray-800 h-screen w-[20rem]  shrink-0">
+                <div className="meeting-heading-wrap flex justify-between items-center px-3 h-[5vh]">
+                  <div className="meeting-heading font-bold cursor-pointer">
+                    Chi tiết cuộc họp
+                  </div>
+                  <div
+                    onClick={() => setIsShowDetail(false)}
+                    className="meeting-heading-cross display-center cursor-pointer"
+                  >
+                    <span className="material-icons">clear</span>
+                  </div>
+                </div>
+                <div className="people-chat-wrap flex justify-between items-center text-sm mx-3 px-3 h-[5vh]">
+                  <div
+                    onClick={() => setIsShowChat(true)}
+                    className={`${
+                      isShowChat ? "border-b-2 border-sky-500" : ""
+                    } people-heading display-center cursor-pointer transition`}
+                  >
+                    <div className="people-heading-icon display-center mr-1">
+                      <span className="material-icons">people</span>
+                    </div>
+                    <div className="people-heading-text display-center">
+                      Participant (
+                      <span className="participant-count">
+                        {1 + users.length}
+                      </span>
+                    </div>
+                    )
+                  </div>
+                  <div
+                    onClick={() => setIsShowChat(false)}
+                    className={`${
+                      !isShowChat ? "border-b-2 border-sky-500" : ""
+                    } chat-heading flex justify-around	 items-center cursor-pointer transition`}
+                  >
+                    <div className="  chat-heading-icon display-center mr-1">
+                      <span className="material-icons">message</span>
+                    </div>
+                    <div className="heading-text">Chat</div>
+                  </div>
+                </div>
+
+                <div className="transition in-call-chat-wrap mx-3 px-3 text-sm h-[80vh] overflow-y-scroll my-3">
+                  {isShowChat ? (
+                    <div className="in-call-wrap-up space-y-2">
+                      {!!listRoom.length && (
+                        <div className="flex flex-col space-y-1">
+                          <h3 className="text-sm font-bold">
+                            Danh sách phòng bạn có thể tham gia
+                          </h3>
+                          {listRoom.map((l) => {
+                            return (
+                              <Link
+                                target="_blank"
+                                key={l}
+                                to={BASE_URI_CLIENT + `meetingID/${l}`}
+                                className="text-center focus:outline-none text-white bg-green-700 hover:bg-green-800 focus:ring-4 focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 mr-2 mb-2 "
+                              >
+                                Phòng {" " + l}
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <div className="in-call-wrap flex justify-between items-center mb-3">
                         <div className="participant-img-name-wrap display-center cursor-pointer">
                           <div className="participant-img">
                             <img
@@ -955,310 +1105,305 @@ export default function Meeting() {
                               className="border border-gray-800 h-[40px] w-[40px] rounded-[50%]"
                             />
                           </div>
-                          <div className="participant-name ml-2">
-                            {u.otherUserId}
-                          </div>
-                        </div>
-                        <div className="participant-action-wrap display-center ">
-                          <div
-                            onClick={() => setIsDropDown((pre) => !pre)}
-                            className="relative   participant-action-dot display-center mr-2 cursor-pointer"
-                          >
-                            <span className="material-icons">more_vert</span>
-                            {isDropDown && (
-                              <div className="z-1s0 bg-white divide-y divide-gray-100 rounded-lg shadow w-44 absolute right-4 top-6 drop-shadow-lg">
-                                <ul className="py-2 text-sm text-gray-700 dark:text-gray-200">
-                                  <li
-                                    onClick={() =>
-                                      handleChangeUserVideoPer(
-                                        u.connId,
-                                        id,
-                                        u.video
-                                      )
-                                    }
-                                    className="block px-4 py-2 hover:bg-gray-100 "
-                                  >
-                                    {u.video ? "Tắt Video" : "Mở Video"}
-                                  </li>
-                                  <li
-                                    onClick={() =>
-                                      handleChangeUserAudioPer(
-                                        u.connId,
-                                        id,
-                                        u.audio
-                                      )
-                                    }
-                                    className="block px-4 py-2 hover:bg-gray-100 "
-                                  >
-                                    {u.audio ? "Tắt Audio" : "Mở Audio"}
-                                  </li>
-                                  <li
-                                    onClick={() =>
-                                      handleChangeUserChatPer(
-                                        u.connId,
-                                        id,
-                                        u.chat
-                                      )
-                                    }
-                                    className="block px-4 py-2 hover:bg-gray-100 "
-                                  >
-                                    {u.chat ? "Tắt Chat" : "Mở Chat"}
-                                  </li>
-                                  <li
-                                    onClick={() =>
-                                      handleChangeUserShareFilePer(
-                                        u.connId,
-                                        id,
-                                        u.shareFile
-                                      )
-                                    }
-                                    className="block px-4 py-2 hover:bg-gray-100 "
-                                  >
-                                    {u.shareFile
-                                      ? "Tắt chia sẽ file"
-                                      : "Mở chia sẽ file"}
-                                  </li>
-                                </ul>
-                              </div>
-                            )}
-                          </div>
+                          <div className="participant-name ml-2">Tôi</div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="chat-show-wrap text-gray-800 text-sm flex flex-col justify-between h-full">
-                  <div className="chat-message-show" id="messages">
-                    {messages.map((m) => {
-                      return (
-                        <React.Fragment key={m.time}>
-                          <div className="flex space-x-3 items-center">
-                            <span className="font-medium text-base">
-                              {m.from}
-                            </span>
-                            <p className="text-xs text-gray-500">{m.time}</p>
-                          </div>
-                          <p>{m.message}</p>
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mb-[20px] chat-message-sent flex justify-between items-center">
-                    {currentUser.chat && (
-                      <>
-                        <div className="chat-message-sent-input w-[85%]">
-                          <input
-                            ref={inputRef}
-                            type="text"
-                            name=""
-                            id=""
-                            placeholder="Nhập tin nhắn"
-                            className="outline-none chat-message-sent-input-field w-full border-b-[1px] border-sky-500"
-                          />
-                        </div>
-                        <div
-                          onClick={handleSendMessage}
-                          className="chat-message-sent-action display-center cursor-pointer text-sky-500"
-                        >
-                          <span className="material-icons">send</span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center justify-between px-2  g-top-left w-[20rem] bg-gray-100 text-gray-600">
-          <div
-            onClick={handleShowDetailsParticipant}
-            className="top-left-participant-wrap pt-2 cursor-pointer"
-          >
-            <div className="top-left-participant-icon">
-              <BsFillPeopleFill size={24} />
-            </div>
-            <div className="top-left-participant-count">{1 + users.length}</div>
-          </div>
-          <div
-            onClick={handleShowDetailsChat}
-            className="top-left-chat-wrap pt-2 cursor-pointer"
-          >
-            <MdMessage size={24} />
-          </div>
-          <div className="top-left-time-wrap"></div>
-        </div>
-      </div>
-
-      <div className="g-bottom z-50 px-5 transition bg-gray-100 m-0 flex justify-between items-center">
-        <div className="bottom-left flex relative p-[5px]">
-          {isShowDialog && (
-            <div className="g-details border border-green-500 mb-2">
-              <div className="g-details-heading flex justify-between space-x-2 items-center border-b pb-1">
-                <div
-                  onClick={() => setIsShowShareForm(false)}
-                  className="g-details-heading-detail flex items-center cursor-pointer"
-                >
-                  <span className="material-icons -mt-[5px]">error</span>
-                  Chi tiết
-                  <span></span>
-                </div>
-                <div
-                  onClick={() => setIsShowShareForm(true)}
-                  className="g-details-heading-attachment flex items-center cursor-pointer"
-                >
-                  <span className="material-icons -mt-[5px]">attachment</span>
-                  Đính kèm tập tin
-                  <span></span>
-                </div>
-              </div>
-              <div className="g-details-heading-show-wrap">
-                {isShowShareForm ? (
-                  <div className="g-details-heading-show-attachment relative">
-                    <div className="show-attach-file overflow-x-hidden overflow-y-auto max-h-[3.5rem]">
-                      {listShareFile.map((f, index) => {
+                      {users.map((u) => {
                         return (
                           <div
-                            key={index}
-                            className="left-align flex items-center"
+                            id={"participant_" + u.connId}
+                            key={u.connId}
+                            className="in-call-wrap flex justify-between items-center mb-3"
                           >
-                            <img
-                              src="/other.jpg"
-                              className="h-[40px] w-[40px] caller-image rounded-full "
-                              alt=""
-                            />
-                            <div className="font-semibold mx-[5px] shrink-0">
-                              {f.userName}:
+                            <div className="participant-img-name-wrap display-center cursor-pointer">
+                              <div className="participant-img">
+                                <img
+                                  src="/other.jpg"
+                                  alt=""
+                                  className="border border-gray-800 h-[40px] w-[40px] rounded-[50%]"
+                                />
+                              </div>
+                              <div className="participant-name ml-2">
+                                {u.otherUserId}
+                              </div>
                             </div>
-                            <div className="cursor-pointer line-clamp-1">
-                              <Link
-                                to={BASE_URI + `download/${id}/${f.fileName}`}
-                                className="text-[#007bff]"
-                                download={true}
-                                target="_blank"
-                              >
-                                {f.fileName}
-                              </Link>
-                            </div>
+                            {!u?.owner && currentUser.owner && (
+                              <div className="participant-action-wrap display-center ">
+                                <UserMenu
+                                  user={u}
+                                  id={id}
+                                  handleChangeUserPerToAdmin={
+                                    handleChangeUserPerToAdmin
+                                  }
+                                  handleChangeUserAudioPer={
+                                    handleChangeUserAudioPer
+                                  }
+                                  handleChangeUserShareFilePer={
+                                    handleChangeUserShareFilePer
+                                  }
+                                  handleChangeUserVideoPer={
+                                    handleChangeUserVideoPer
+                                  }
+                                  handleChangeUserChatPer={
+                                    handleChangeUserChatPer
+                                  }
+                                />
+                              </div>
+                            )}
                           </div>
                         );
                       })}
                     </div>
-                    <div className="upload-attach-file">
-                      {currentUser.shareFile && (
-                        <form
-                          encType="multipart/form-data"
-                          className="display-center pt-1"
-                          id="uploadForm"
-                        >
-                          <div className="custom-file basis-[79%] ">
-                            <input
-                              ref={fileRef}
-                              type="file"
-                              className="custom-file-input border "
-                              id="customFile"
-                              name="imageFile"
-                            />
-                          </div>
-                          <div className="share-button-wrap">
-                            <button
-                              onClick={handleShareFile}
-                              type="button"
-                              className="basis-[19%] share-attach text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 mr-2 mb-2"
+                  ) : (
+                    <div className="chat-show-wrap text-gray-800 text-sm flex flex-col justify-between h-full">
+                      <div className="chat-message-show" id="messages">
+                        {messages.map((m) => {
+                          return (
+                            <React.Fragment key={m.time}>
+                              <div className="flex space-x-3 items-center">
+                                <span className="font-medium text-base">
+                                  {m.from}
+                                </span>
+                                <p className="text-xs text-gray-500">
+                                  {m.time}
+                                </p>
+                              </div>
+                              <p>{m.message}</p>
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mb-[20px] chat-message-sent flex justify-between items-center">
+                        {currentUser.chat && (
+                          <>
+                            <div className="chat-message-sent-input w-[85%]">
+                              <input
+                                ref={inputRef}
+                                type="text"
+                                name=""
+                                id=""
+                                placeholder="Nhập tin nhắn"
+                                className="outline-none chat-message-sent-input-field w-full border-b-[1px] border-sky-500"
+                              />
+                            </div>
+                            <div
+                              onClick={handleSendMessage}
+                              className="chat-message-sent-action display-center cursor-pointer text-sky-500"
                             >
-                              Chia sẽ
-                            </button>
-                          </div>
-                        </form>
-                      )}
+                              <span className="material-icons">send</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ) : (
-                  <div className="g-details-heading-show">
-                    <div className="font-semibold text-gray-500">
-                      Thông tin tham gia
-                    </div>
-                    <div className="cursor-pointer">
-                      <span className=" text-sky-600 font-medium">
-                        {window.location.href}
-                      </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between px-2  g-top-left w-[20rem] bg-gray-100 text-gray-600">
+              <div
+                onClick={handleShowDetailsParticipant}
+                className="top-left-participant-wrap pt-2 cursor-pointer"
+              >
+                <div className="top-left-participant-icon">
+                  <BsFillPeopleFill size={24} />
+                </div>
+                <div className="top-left-participant-count">
+                  {1 + users.length}
+                </div>
+              </div>
+              <div
+                onClick={handleShowDetailsChat}
+                className="top-left-chat-wrap pt-2 cursor-pointer"
+              >
+                <MdMessage size={24} />
+              </div>
+              {currentUser?.owner && (
+                <div
+                  onClick={() => setIsShowModalAddRoom(true)}
+                  className="top-left-chat-wrap pt-2 cursor-pointer"
+                >
+                  <RiVideoAddFill size={24} />
+                </div>
+              )}
+              <div className="top-left-time-wrap"></div>
+            </div>
+          </div>
+
+          <div className="g-bottom z-50 px-5 transition bg-gray-100 m-0 flex justify-between items-center">
+            <div className="bottom-left flex relative p-[5px]">
+              {isShowDialog && (
+                <div className="g-details border border-green-500 mb-2">
+                  <div className="g-details-heading flex justify-between space-x-2 items-center border-b pb-1">
+                    <div
+                      onClick={() => setIsShowShareForm(false)}
+                      className="g-details-heading-detail flex items-center cursor-pointer"
+                    >
+                      <span className="material-icons -mt-[5px]">error</span>
+                      Chi tiết
+                      <span></span>
                     </div>
                     <div
-                      onClick={handleCopyClipBoard}
-                      className="cursor-pointer"
+                      onClick={() => setIsShowShareForm(true)}
+                      className="g-details-heading-attachment flex items-center cursor-pointer"
                     >
-                      <span className="material-icons text-sm">
-                        content_copy
+                      <span className="material-icons -mt-[5px]">
+                        attachment
                       </span>
-                      <span className="copy_info font-bold">
-                        Sao chép thông tin tham gia
-                      </span>
+                      Đính kèm tập tin
+                      <span></span>
                     </div>
-                    {isShowStatusCopy && (
-                      <p className="text-purple-500 font-semibold">
-                        Đã sao chép thông tin đường dẫn
-                      </p>
+                  </div>
+                  <div className="g-details-heading-show-wrap">
+                    {isShowShareForm ? (
+                      <div className="g-details-heading-show-attachment relative">
+                        <div className="show-attach-file overflow-x-hidden overflow-y-auto max-h-[3.5rem]">
+                          {listShareFile.map((f, index) => {
+                            return (
+                              <div
+                                key={index}
+                                className="left-align flex items-center"
+                              >
+                                <img
+                                  src="/other.jpg"
+                                  className="h-[40px] w-[40px] caller-image rounded-full "
+                                  alt=""
+                                />
+                                <div className="font-semibold mx-[5px] shrink-0">
+                                  {f.userName}:
+                                </div>
+                                <div className="cursor-pointer line-clamp-1">
+                                  <Link
+                                    to={
+                                      BASE_URI + `download/${id}/${f.fileName}`
+                                    }
+                                    className="text-[#007bff]"
+                                    download={true}
+                                    target="_blank"
+                                  >
+                                    {f.fileName}
+                                  </Link>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="upload-attach-file">
+                          {currentUser.shareFile && (
+                            <form
+                              encType="multipart/form-data"
+                              className="display-center pt-1"
+                              id="uploadForm"
+                            >
+                              <div className="custom-file basis-[79%] ">
+                                <input
+                                  ref={fileRef}
+                                  type="file"
+                                  className="custom-file-input border "
+                                  id="customFile"
+                                  name="imageFile"
+                                />
+                              </div>
+                              <div className="share-button-wrap">
+                                <button
+                                  onClick={handleShareFile}
+                                  type="button"
+                                  className="basis-[19%] share-attach text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 mr-2 mb-2"
+                                >
+                                  Chia sẽ
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="g-details-heading-show">
+                        <div className="font-semibold text-gray-500">
+                          Thông tin tham gia
+                        </div>
+                        <div className="cursor-pointer">
+                          <span className=" text-sky-600 font-medium">
+                            {window.location.href}
+                          </span>
+                        </div>
+                        <div
+                          onClick={handleCopyClipBoard}
+                          className="cursor-pointer"
+                        >
+                          <span className="material-icons text-sm">
+                            content_copy
+                          </span>
+                          <span className="copy_info font-bold">
+                            Sao chép thông tin tham gia
+                          </span>
+                        </div>
+                        {isShowStatusCopy && (
+                          <p className="text-purple-500 font-semibold">
+                            Đã sao chép thông tin đường dẫn
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
-                )}
+                </div>
+              )}
+              <div
+                onClick={() => setIsShowDialog((pre) => !pre)}
+                className=" text-center cursor-pointer hover:opacity-80 meeting-details-button flex items-center space-x-2 "
+              >
+                <p>Chi tiết cuộc họp</p>
+
+                <SlArrowDown size={12} />
               </div>
             </div>
-          )}
-          <div
-            onClick={() => setIsShowDialog((pre) => !pre)}
-            className=" text-center cursor-pointer hover:opacity-80 meeting-details-button flex items-center space-x-2 "
-          >
-            <p>Chi tiết cuộc họp</p>
+            <div className="bottom-middle  flex space-x-4 justify-center items-center">
+              <div
+                id="miceMuteUnmute"
+                className={`mic toggle wrap action-icon-style mr-2 cursor-pointer hover:opacity-80 ${
+                  currentUser?.audio ? "visible" : "invisible"
+                }`}
+              >
+                <span className="material-icons">mic_off</span>
+              </div>
+              <div
+                onClick={handleLeaveMeeting}
+                className="mr-2 cursor-pointer hover:opacity-80 text-center end-call-wrap action-icon-style"
+              >
+                <IoIosCall className="text-red-500" size={24} />
+              </div>
 
-            <SlArrowDown size={12} />
-          </div>
-        </div>
-        <div className="bottom-middle  flex space-x-4 justify-center items-center">
-          <div
-            id="miceMuteUnmute"
-            className={`mic toggle wrap action-icon-style mr-2 cursor-pointer hover:opacity-80 ${
-              currentUser?.audio ? "visible" : "invisible"
-            }`}
-          >
-            <span className="material-icons">mic_off</span>
-          </div>
-          <div
-            onClick={handleLeaveMeeting}
-            className="mr-2 cursor-pointer hover:opacity-80 text-center end-call-wrap action-icon-style"
-          >
-            <IoIosCall className="text-red-500" size={24} />
-          </div>
+              <div
+                id="videoCamOff"
+                className={`video-toggle-wrap action-icon-style text-center cursor-pointer hover:opacity-80 ${
+                  currentUser?.video ? "visible" : "invisible"
+                }`}
+              >
+                <span className="material-icons">videocam_off</span>
+              </div>
+            </div>
 
-          <div
-            id="videoCamOff"
-            className={`video-toggle-wrap action-icon-style text-center cursor-pointer hover:opacity-80 ${
-              currentUser?.video ? "visible" : "invisible"
-            }`}
-          >
-            <span className="material-icons">videocam_off</span>
-          </div>
-        </div>
-
-        <div className="bottom-0 right-0 flex justify-center items-center mr-3 ">
-          <div
-            id="btnScreenShare"
-            className={`present-now-wrap flex justify-center flex-col items-center mr-5 cursor-pointer hover:opacity-80 ${
-              currentUser?.video ? "visible" : "invisible"
-            }`}
-          >
-            <span className="material-icons">present_to_all</span>
-            <div>Hiện tại</div>
-          </div>
-          <div className="option-wrap cursor-pointer hover:opacity-80 flex items-center h-[10vh] relative ">
-            <div className="option-icon">
-              <FiMoreVertical size={24} />
+            <div className="bottom-0 right-0 flex justify-center items-center mr-3 ">
+              <div
+                id="btnScreenShare"
+                className={`present-now-wrap flex justify-center flex-col items-center mr-5 cursor-pointer hover:opacity-80 ${
+                  currentUser?.video ? "visible" : "invisible"
+                }`}
+              >
+                <span className="material-icons">present_to_all</span>
+                <div>Hiện tại</div>
+              </div>
+              <div className="option-wrap cursor-pointer hover:opacity-80 flex items-center h-[10vh] relative ">
+                <div className="option-icon">
+                  <FiMoreVertical size={24} />
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    </main>
+        </main>
+      )}
+    </>
   );
 }
