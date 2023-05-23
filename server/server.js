@@ -10,7 +10,9 @@ whiteList = [
   "https://localhost:3000",
   "http://localhost:3000",
   "https://192.168.1.24:3000",
-  "https://116.109.252.13:3000",
+  "https://chuyendeclient.vercel.app",
+  "https://chuyendeclient-git-main-tanque1.vercel.app",
+  "https://chuyendeclient-pxgqydqsa-tanque1.vercel.app",
 ];
 const corsOptions = {
   credentials: true,
@@ -60,7 +62,6 @@ app.post("/get-info-meeting", (req, res) => {
   const { meetId, sub } = req.body;
 
   const checkMeeting = listMeetings.find((l) => l.meetId === +meetId);
-  console.log(checkMeeting);
   if (!checkMeeting) {
     return res.json({ message: "Mã phòng không hợp lệ", status: 0 });
   }
@@ -77,7 +78,8 @@ app.post("/get-info-meeting", (req, res) => {
 
 app.get("/download/:meetingId/:fileName", (req, res) => {
   const { meetingId, fileName } = req.params;
-  return res.download(`./public/attachment/${meetingId}/${fileName}`);
+  console.log(`${path.join(__dirname, "public/attachment",meetingId)}/${fileName}`);
+  return res.download(`${path.join(__dirname, "public/attachment",meetingId)}/${fileName}`);
   //  return res.attachment(
   //   path.join(
   //     __dirname,
@@ -85,34 +87,44 @@ app.get("/download/:meetingId/:fileName", (req, res) => {
   //   )
 });
 
-app.post("/attach-file", (req, res) => {
+app.post("/attach-file", async (req, res) => {
   const data = req.body;
   const file = req.files["zipFile"];
-  const dir = "public/attachment/" + data.meetingId + "/";
+  const dir = path.join(__dirname, "public/attachment/" + data.meetingId);
   if (!fs.existsSync(dir)) {
-    fs.mkdir(path.join(__dirname, dir), { recursive: true }, (err) => {
+    await fs.mkdir(dir, { recursive: true }, (err) => {
       if (err) {
         return console.error(err);
       }
       console.log("Directory created successfully!");
+      file.mv(
+        path.join(dir, Buffer.from(file.name, "latin1").toString("utf8")),
+        (error) => {
+          if (error) {
+            console.log("Loi up file", error);
+          } else {
+            console.log("up file thanh cong");
+          }
+        }
+      );
     });
   }
-  file.mv(
-    path.join(
-      __dirname,
-      "public/attachment/" +
-        data.meetingId +
-        "/" +
-        Buffer.from(file.name, "latin1").toString("utf8")
-    ),
-    (error) => {
-      if (error) {
-        console.log("Loi up file", error);
-      } else {
-        console.log("up file thanh cong");
-      }
-    }
-  );
+  // file.mv(
+  //   path.join(
+  //     __dirname,
+  //     "public/attachment/" +
+  //       data.meetingId +
+  //       "/" +
+  //       Buffer.from(file.name, "latin1").toString("utf8")
+  //   ),
+  //   (error) => {
+  //     if (error) {
+  //       console.log("Loi up file", error);
+  //     } else {
+  //       console.log("up file thanh cong");
+  //     }
+  //   }
+  // );
   res.json({ message: true });
 });
 
@@ -146,6 +158,19 @@ io.on("connection", (socket) => {
       from_connid: socket.id,
     });
   });
+
+  socket.on("InvitingUserOutRoom",data =>{
+    listMeetings = listMeetings.map((l) =>{
+      if(+l.meetId === +data.meetingId){
+        return {
+          ...l,
+          users: l.users?.filter(u => u.sub !== data.sub)
+        }
+      }
+
+    })
+    socket.to(data.connId).emit("informInvitingUserOutRoom")
+  })
 
   socket.on("fileTransferToOther", (data) => {
     const mUser = userConnections.find((p) => p.connectionId === socket.id);
@@ -287,30 +312,29 @@ io.on("connection", (socket) => {
       }
       return l;
     });
-     userConnections = userConnections.map((user) => {
-      if( +data.meetingId === +user.meetingId){
+    userConnections = userConnections.map((user) => {
+      if (+data.meetingId === +user.meetingId) {
         return {
           ...user,
           audio: true,
           video: true,
           shareFile: true,
           chat: true,
-          owner: true
-        }
-      }else {
+          owner: true,
+        };
+      } else {
         return user;
       }
-     })
+    });
     const otherUser = userConnections.filter(
       (u) => +u.meetingId === +data.meetingId
     );
-    otherUser.forEach(o =>{
-      socket.to(o.connectionId).emit("informUpdatePermissionsUser",data)
-    })
+    otherUser.forEach((o) => {
+      socket.to(o.connectionId).emit("informUpdatePermissionsUser", data);
+    });
   });
 
-  socket.on("addRoom",(data) =>{
-    console.log(data);
+  socket.on("addRoom", (data) => {
     listMeetings.push({
       meetId: data.meetId,
       owner: [data.owner],
@@ -322,21 +346,21 @@ io.on("connection", (socket) => {
           shareFile: true,
           chat: true,
         },
-        ...data.users?.map(u => {
+        ...data.users?.map((u) => {
           return {
             sub: u.sub,
             audio: true,
             video: true,
             shareFile: true,
             chat: true,
-          }
-        })
+          };
+        }),
       ],
     });
-    data.users?.forEach(u =>{
-      socket.to(u.connId).emit("informUsersAddedToTheRoom",data.meetId)
-    })
-  })
+    data.users?.forEach((u) => {
+      socket.to(u.connId).emit("informUsersAddedToTheRoom", data.meetId);
+    });
+  });
 
   socket.on("disconnect", () => {
     const disUser = userConnections.find((p) => p.connectionId === socket.id);

@@ -60,11 +60,10 @@ export default function ModalAddRoom({
               </svg>
             </button>
           </div>
-          <div className="p-6 space-y-6">
-            <div className="flex justify-between items-center mb-3">
+          <div className="p-6 space-y-6 flex flex-col">
               {data.map((u, i) => {
                 return (
-                  <React.Fragment key={u.sub}>
+                  <div key={u.sub} className="flex justify-between items-center mb-3">
                     <div className="participant-img-name-wrap display-center cursor-pointer">
                       <div className="participant-img flex justify-center items-center">
                         <img
@@ -91,10 +90,9 @@ export default function ModalAddRoom({
                         Thêm
                       </label>
                     </div>
-                  </React.Fragment>
+            </div>
                 );
               })}
-            </div>
           </div>
           <div className="flex items-center p-6 space-x-2 border-t border-gray-200 rounded-b dark:border-gray-600">
             <button

@@ -7,6 +7,7 @@ export default function UserMenu({
   handleChangeUserVideoPer=null,
   handleChangeUserShareFilePer = null,
   handleChangeUserPerToAdmin = null,
+  handleInvitingUserOutRoom = null,
     id=""
 }) {
     const [isDropDown,setIsDropDown] = useState(false)
@@ -55,6 +56,14 @@ export default function UserMenu({
               className="block px-4 py-2 hover:bg-gray-100 "
             >
               Bổ nhiệm chủ phòng
+            </li>
+            <li
+              onClick={() =>
+                handleInvitingUserOutRoom(user.connId, id,user.sub)
+              }
+              className="block px-4 py-2 hover:bg-gray-100 "
+            >
+              Mời ra khỏi phòng
             </li>
           </ul>
         </div>

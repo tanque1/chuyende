@@ -35,7 +35,7 @@ export default function Main() {
     <div className="container mx-auto flex p-10">
       <div className="space-y-2">
         <h1 className="text-4xl font-medium">
-          Tính năng họp và gọi video dành cho tất cả mọi người.
+         Tính năng họp và gọi video dành cho tất cả mọi người.
         </h1>
         <p className="text-gray-600">
           Google Meet là một dịch vụ cung cấp tính năng họp và gọi video bảo

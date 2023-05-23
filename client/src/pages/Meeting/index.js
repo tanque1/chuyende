@@ -444,7 +444,7 @@ export default function Meeting() {
       message: inputRef.current.value,
       from: "Tôi",
     };
-    setMessages((pre) => [{ ...data, time: lTime }, ...pre]);
+    setMessages((pre) => [...pre, { ...data, time: lTime }]);
 
     socket.emit("sendMessage", inputRef.current.value);
     inputRef.current.value = "";
@@ -633,14 +633,26 @@ export default function Meeting() {
 
   const handleAddRoom = (list) => {
     const meetingID = Math.floor(Math.random() * 100000);
-    
+
     socket &&
       socket.emit("addRoom", {
         owner: currentUser.sub,
         users: list,
         meetId: meetingID,
       });
-      setListRoom(pre => [meetingID,...pre])
+    setListRoom((pre) => [meetingID, ...pre]);
+  };
+
+  const handleInvitingUserOutRoom = (connId, meetingId, sub) => {
+    socket &&
+      socket.emit("InvitingUserOutRoom", {
+        connId,
+        meetingId,
+        sub,
+      });
+    setUsers((pre) => {
+      return pre.filter((u) => u.sub !== sub);
+    });
   };
 
   useEffect(() => {
@@ -688,9 +700,10 @@ export default function Meeting() {
     if (!currentUser && socket) {
       getUser(info);
     }
-    // else {
-    //   navigate("/", { replace: true });
-    // }
+
+    if (!info) {
+      navigate("/", { replace: true });
+    }
   }, [info, socket]);
 
   useEffect(() => {
@@ -773,7 +786,7 @@ export default function Meeting() {
         const time = new Date();
         const lTime = time.toLocaleString("vi-VN");
 
-        setMessages((pre) => [{ ...data, time: lTime }, ...pre]);
+        setMessages((pre) => [...pre, { ...data, time: lTime }]);
       });
   }, [socket]);
 
@@ -946,6 +959,12 @@ export default function Meeting() {
         setListRoom((pre) => [data, ...pre]);
       });
   }, [socket]);
+
+  useEffect(() => {
+    socket && socket.on("informInvitingUserOutRoom",()=>{
+      handleLeaveMeeting();
+    })
+  },[socket])
   return (
     <>
       <ModalAddRoom
@@ -1147,6 +1166,9 @@ export default function Meeting() {
                                   handleChangeUserChatPer={
                                     handleChangeUserChatPer
                                   }
+                                  handleInvitingUserOutRoom={
+                                    handleInvitingUserOutRoom
+                                  }
                                 />
                               </div>
                             )}
@@ -1156,7 +1178,10 @@ export default function Meeting() {
                     </div>
                   ) : (
                     <div className="chat-show-wrap text-gray-800 text-sm flex flex-col justify-between h-full">
-                      <div className="chat-message-show" id="messages">
+                      <div
+                        className="chat-message-show space-y-2"
+                        id="messages"
+                      >
                         {messages.map((m) => {
                           return (
                             <React.Fragment key={m.time}>
